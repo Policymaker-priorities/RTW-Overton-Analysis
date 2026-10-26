@@ -266,9 +266,10 @@ def cmd_overton_merge(paths: Paths) -> None:
     print(f"  {links['overton_document_id'].nunique()} citing documents, {len(links)} links "
           f"({int(links['duplicate'].sum())} duplicates dropped, "
           f"{int((~links['counts'] & ~links['duplicate']).sum())} excluded by the rule)")
-    print(f"  {len(q)} papers searched: {int(q['policy_cited_any'].sum())} cited at least once; "
-          f"{int(q['policy_cites'].sum())} policy citations "
-          f"({int(q['policy_cites_all'].sum())} before exclusions)")
+    print(f"  {len(q)} papers searched; by tier (each includes the ones before):")
+    for t, label in policy_cites.TIERS.items():
+        print(f"    {t} + {label:<32} {int(q[f'policy_cites_t{t}'].sum()):6d} citations, "
+              f"{int(q[f'policy_cited_t{t}'].sum())} papers cited")
     print(f"  wrote {paths.papers_cited.relative_to(paths.root)}, "
           f"{paths.citation_links.relative_to(paths.root)}, "
           f"{paths.overton_sources.relative_to(paths.root)}")

@@ -13,13 +13,31 @@ def doc(i, cited, org="Government", dtype="Publication", title=None, country="US
             "Source organisation type": org, "Source country": country, "Overton URL": ""}
 
 
-def test_doc_rule():
-    assert policy_cites.doc_rule("Government", "Working paper") == (True, "public source")
-    assert policy_cites.doc_rule("IGO", "Working paper")[0] is True
-    assert policy_cites.doc_rule("Think Tank", "Working paper")[0] is False
-    assert policy_cites.doc_rule("NGO", "Working paper")[0] is False
-    assert policy_cites.doc_rule("Think Tank", "Publication")[0] is True
-    assert policy_cites.doc_rule("Government", "Scholarly article")[0] is False
+def test_doc_tier():
+    tier = lambda *a: policy_cites.doc_tier(*a)[0]  # noqa: E731
+    assert tier("Government", "Publication", "govuk", "The UK Government") == 1
+    assert tier("Legislative Body", "Publication", "riksdag", "Sveriges Riksdag") == 1
+    assert tier("Government", "Working paper", "ifausweden", "IFAU") == 1
+    assert tier("Government", "Working paper", "ecb", "European Central Bank") == 2
+    assert tier("Government", "Publication", "bankofireland", "Banc Ceannais na hÉireann") == 2
+    assert tier("Government", "Publication", "euinvestbank", "European Investment Bank") == 1
+    assert tier("IGO", "Working paper", "imf", "International Monetary Fund") == 3
+    assert tier("Think Tank", "Publication", "brookings", "Brookings Institution") == 4
+    assert tier("Think Tank", "Working paper", "nber", "NBER") is None
+    assert tier("NGO", "Working paper", "x", "X") is None
+    assert tier("Government", "Scholarly article", "govuk", "The UK Government") is None
+    assert tier("Private Sector", "Publication", "x", "X") is None
+
+
+def test_central_bank_names():
+    cb = lambda name: policy_cites.is_central_bank("id", name, "Government")  # noqa: E731
+    for name in ("Federal Reserve Bank of St Louis", "Bank of England", "Banco de España",
+                 "Banca D'Italia", "Banque de France", "Deutsche Bundesbank", "Sveriges Riksbank",
+                 "Österreichische Nationalbank", "Hong Kong Monetary Authority", "De Nederlandsche Bank"):
+        assert cb(name), name
+    for name in ("Government of Finland", "Bankruptcy Service", "Joint Research Centre"):
+        assert not cb(name), name
+    assert not policy_cites.is_central_bank("ecb", "European Central Bank", "IGO")
 
 
 def test_region():
@@ -42,6 +60,7 @@ def project(tmp_path):
         doc(6, "10.1/zz"),                                               # cites nothing of ours
         doc(7, "10.1/b", title="성별 임금격차"),                         # Korean titles differ
         doc(8, "10.1/b", title="지역 경제"),
+        doc(9, "10.1/a", dtype="Working paper", source="Federal Reserve Bank of Boston"),
     ]).to_csv(paths.overton_raw / "export.csv", index=False)
     return paths
 
@@ -52,15 +71,20 @@ def test_merge_counts(project):
     out, links, sources = policy_cites.merge(project, coded)
     out = out.set_index("doi")
     a, b, c, d = (out.loc[x] for x in ("10.1/a", "10.1/b", "10.1/c", "10.1/d"))
-    assert a["policy_cites"] == 2 and a["policy_cites_all"] == 3          # docs 1, 3; +nber
-    assert a["policy_cites_excluded"] == 1
-    assert a["policy_cites_government"] == 1 and a["policy_cites_think_tank_ngo"] == 1
-    assert a["policy_cites_us"] == 1 and a["policy_cites_europe"] == 1
+    # a: government doc 1 (tier 1), central-bank working paper doc 9 (tier 2), think-tank
+    # report doc 3 (tier 4); the NBER working paper and duplicate doc 4 never count.
+    assert [a[f"policy_cites_t{t}"] for t in (1, 2, 3, 4)] == [1, 2, 2, 3]
+    assert a["policy_cites"] == 3 and a["policy_cited_t1"] == True        # noqa: E712
+    assert a["policy_cites_government_legislature"] == 1 and a["policy_cites_central_bank"] == 1
+    assert a["policy_cites_think_tank_ngo"] == 1 and a["policy_cites_igo"] == 0
+    assert a["policy_cites_us"] == 2 and a["policy_cites_europe"] == 1
     assert a["policy_first_cite_year"] == 2021 and a["policy_years_to_first_cite"] == 3
-    assert b["policy_cites"] == 3 and b["policy_cites_igo"] == 1           # IGO working paper kept
+    # b: two government docs (Korean titles kept apart) and an IGO working paper.
+    assert [b[f"policy_cites_t{t}"] for t in (1, 2, 3, 4)] == [2, 2, 3, 3]
     assert b["policy_cites_international"] == 1
-    assert c["policy_cites"] == 0 and c["policy_cited_any"] == False      # noqa: E712 - searched
-    assert d["overton_queried"] == False and pd.isna(d["policy_cites"])   # noqa: E712 - not searched
+    assert c["policy_cites_t4"] == 0 and c["policy_cited_t1"] == False    # noqa: E712 - searched
+    assert d["overton_queried"] == False and pd.isna(d["policy_cites_t1"])  # noqa: E712 - not searched
+    assert "policy_cites_all" not in out.columns
     assert int(links["duplicate"].sum()) == 1
     nber = sources.set_index("source_id").loc["nber"]
     assert nber["excluded"] == 1 and nber["counted"] == 0

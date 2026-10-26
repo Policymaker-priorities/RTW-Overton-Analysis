@@ -5,14 +5,16 @@ every DOI it cites in "Cited DOIs"), saved as CSV in data/raw/overton/, plus
 a copy of each DOI list that was searched, in data/raw/overton/queried/, so a
 paper that was searched and not cited gets 0 and one never searched stays blank.
 
-Which citing documents count (decided 2026-10-22):
-- government, IGO and legislative sources: everything, including their
-  research working papers;
-- think tanks and NGOs: everything except working papers, which removes the
-  academic series Overton files as think tanks (NBER, IZA discussion papers,
-  ifo/CESifo, IFS working papers) while keeping their policy reports;
-- scholarly articles: never.
-`policy_cites_all` counts every document Overton returned, for comparison.
+Which citing documents count, as four nested tiers from strictest to broadest
+(decided 2026-10-22 and 2026-10-26; each tier includes the ones before it):
+1. government and legislative sources, central banks excepted;
+2. + central banks (Overton files them as government);
+3. + intergovernmental organisations (IMF, World Bank, OECD, BIS, ...);
+4. + think tanks and NGOs, except their working papers.
+Working papers of tiers 1-3 count; those of think tanks and NGOs never do, which
+leaves out the academic series Overton files as think tanks (NBER, IZA
+discussion papers, ifo/CESifo, IFS working papers) while keeping those
+organisations' policy reports. Scholarly articles never count.
 
 A citing document is counted once per paper even when Overton lists it more
 than once (same title under one source, or one paper issued by two
@@ -28,9 +30,24 @@ import pandas as pd
 from .normalise import normalise_doi
 from .settings import Paths
 
-PUBLIC_TYPES = frozenset({"Government", "IGO", "Legislative Body"})
 NON_PUBLIC_TYPES = frozenset({"Think Tank", "NGO"})
 NEVER_TYPES = frozenset({"Scholarly article"})
+
+TIERS = {
+    1: "government & legislature",
+    2: "central banks",
+    3: "intergovernmental organisations",
+    4: "think tanks & NGOs",
+}
+
+#: A government source is a central bank when its name matches; checked against
+#: every government source in the sample export (Federal Reserve banks, "Bank of
+#: England", "Banco de España", "Banc Ceannais na hÉireann", the Riksbank...).
+_CENTRAL_BANK = re.compile(
+    r"\bbank\b|\bbanco\b|\bbanca\b|\bbanque\b|bundesbank|riksbank|nationalbank|"
+    r"federal reserve|monetary authority|ceannais|\bnederlandsche bank\b", re.IGNORECASE)
+#: Government sources with a bank in the name that are not central banks.
+NOT_CENTRAL_BANKS = frozenset({"euinvestbank"})  # European Investment Bank
 
 #: Source countries counted as Europe (Overton uses "EU" for EU bodies).
 EUROPE = frozenset({
@@ -55,15 +72,27 @@ def region(country: str) -> str:
     return "other"
 
 
-def doc_rule(org_type: str, doc_type: str) -> tuple[bool, str]:
-    """(counts as a policy citation, reason)."""
+def is_central_bank(source_id: str, source_name: str, org_type: str) -> bool:
+    return (org_type == "Government" and source_id not in NOT_CENTRAL_BANKS
+            and bool(_CENTRAL_BANK.search(str(source_name or ""))))
+
+
+def doc_tier(org_type: str, doc_type: str, source_id: str = "",
+             source_name: str = "") -> tuple[int | None, str]:
+    """(tier 1-4 the citing document enters at, or None when it never counts; reason)."""
     if doc_type in NEVER_TYPES:
-        return False, "scholarly article"
-    if org_type in PUBLIC_TYPES:
-        return True, "public source"
-    if doc_type == "Working paper":
-        return False, "working paper from a non-public source"
-    return True, "non-public source, not a working paper"
+        return None, "scholarly article"
+    if org_type == "Government" and is_central_bank(source_id, source_name, org_type):
+        return 2, TIERS[2]
+    if org_type in ("Government", "Legislative Body"):
+        return 1, TIERS[1]
+    if org_type == "IGO":
+        return 3, TIERS[3]
+    if org_type in NON_PUBLIC_TYPES:
+        if doc_type == "Working paper":
+            return None, "working paper from a think tank or NGO"
+        return 4, TIERS[4]
+    return None, f"organisation type {org_type!r} not covered"
 
 
 def load_exports(paths: Paths) -> pd.DataFrame:
@@ -92,7 +121,8 @@ def citation_links(docs: pd.DataFrame, dois: set[str]) -> pd.DataFrame:
     rows = []
     for r in docs.to_dict("records"):
         cited = {normalise_doi(x) for x in str(r.get("Cited DOIs") or "").split(";") if x.strip()}
-        ok, why = doc_rule(r["Source organisation type"], r["Document type"])
+        tier, why = doc_tier(r["Source organisation type"], r["Document type"],
+                             r["Overton source ID"], r["Source name"])
         year = str(r.get("Publication date") or "")[:4]
         for doi in sorted(cited & dois):
             rows.append({
@@ -109,7 +139,8 @@ def citation_links(docs: pd.DataFrame, dois: set[str]) -> pd.DataFrame:
                 "source_type": r["Source organisation type"],
                 "source_country": r["Source country"],
                 "source_region": region(r["Source country"]),
-                "counts": ok,
+                "tier": tier,
+                "counts": tier is not None,
                 "rule": why,
                 "overton_url": r.get("Overton URL"),
             })
@@ -121,27 +152,28 @@ def citation_links(docs: pd.DataFrame, dois: set[str]) -> pd.DataFrame:
 
 def paper_counts(links: pd.DataFrame, papers: pd.DataFrame, queried: set[str]) -> pd.DataFrame:
     """Per-paper citation measures. Papers whose DOI was not searched get blanks."""
-    use = links[~links["duplicate"]]
-    main = use[use["counts"]]
+    main = links[~links["duplicate"] & links["counts"]]
     pub = papers.set_index("doi")["publication_year"]
     rows = []
     for doi in papers["doi"].dropna():
         if doi not in queried:
             rows.append({"doi": doi, "overton_queried": False})
             continue
-        m, a = main[main["doi"] == doi], use[use["doi"] == doi]
+        m = main[main["doi"] == doi]
         years = m["citing_year"].dropna()
         first = int(years.min()) if len(years) else None
-        row = {
-            "doi": doi, "overton_queried": True,
+        row = {"doi": doi, "overton_queried": True}
+        for t in TIERS:  # nested: tier t counts documents entering at tiers 1..t
+            n = int((m["tier"] <= t).sum())
+            row[f"policy_cites_t{t}"] = n
+            row[f"policy_cited_t{t}"] = n > 0
+        row.update({
             "policy_cites": len(m),
             "policy_cited_any": len(m) > 0,
-            "policy_cites_all": len(a),
-            "policy_cites_excluded": len(a) - len(m),
-            "policy_cites_government": int((m["source_type"] == "Government").sum()),
-            "policy_cites_igo": int((m["source_type"] == "IGO").sum()),
-            "policy_cites_legislative": int((m["source_type"] == "Legislative Body").sum()),
-            "policy_cites_think_tank_ngo": int(m["source_type"].isin(NON_PUBLIC_TYPES).sum()),
+            "policy_cites_government_legislature": int((m["tier"] == 1).sum()),
+            "policy_cites_central_bank": int((m["tier"] == 2).sum()),
+            "policy_cites_igo": int((m["tier"] == 3).sum()),
+            "policy_cites_think_tank_ngo": int((m["tier"] == 4).sum()),
             "policy_cites_us": int((m["source_region"] == "us").sum()),
             "policy_cites_europe": int((m["source_region"] == "europe").sum()),
             "policy_cites_international": int((m["source_region"] == "international").sum()),
@@ -149,7 +181,7 @@ def paper_counts(links: pd.DataFrame, papers: pd.DataFrame, queried: set[str]) -
             "policy_cites_n_sources": int(m["source_id"].nunique()),
             "policy_first_cite_year": first,
             "policy_years_to_first_cite": (first - int(pub[doi]) if first is not None else None),
-        }
+        })
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -157,8 +189,8 @@ def paper_counts(links: pd.DataFrame, papers: pd.DataFrame, queried: set[str]) -
 def source_table(links: pd.DataFrame) -> pd.DataFrame:
     """One row per citing source: how many of its documents count and why, for review."""
     use = links[~links["duplicate"]]
-    g = use.groupby(["source_id", "source_name", "source_type", "source_country"])
-    out = g.agg(documents=("counts", "size"), counted=("counts", "sum"),
+    g = use.groupby(["source_id", "source_name", "source_type", "source_country"], dropna=False)
+    out = g.agg(tier=("tier", "min"), documents=("counts", "size"), counted=("counts", "sum"),
                 working_papers=("document_type", lambda s: int((s == "Working paper").sum())))
     out["excluded"] = out["documents"] - out["counted"]
     return out.reset_index().sort_values(["excluded", "documents"], ascending=False)

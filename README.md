@@ -168,14 +168,26 @@ succeed (credit, key, sign-in or usage limit).
    whose DOI is in no list there stays blank.
 3. `.venv\Scripts\python -m overton overton-merge`
 
-Which citing documents count: everything from government, IGO and legislative sources,
-including their research working papers; think-tank and NGO documents except working
-papers (Overton files NBER, IZA, ifo/CESifo and IFS working papers as think-tank
-documents); never scholarly articles. A document listed twice (re-issued, or co-published
-by two institutions) counts once per paper. `policy_cites_all` is the count before exclusions.
+Citations are counted at four nested tiers, strictest first; each includes the ones before:
+
+| Tier | Adds | Columns |
+|---|---|---|
+| T1 | government departments, agencies and legislatures (not central banks) | `policy_cites_t1`, `policy_cited_t1` |
+| T2 | central banks (Overton files them as government; matched by name, see `policy_cites.py`) | `policy_cites_t2`, `policy_cited_t2` |
+| T3 | intergovernmental organisations (IMF, World Bank, OECD, BIS, ...) | `policy_cites_t3`, `policy_cited_t3` |
+| T4 | think tanks and NGOs, except their working papers | `policy_cites_t4` (= `policy_cites`), `policy_cited_t4` |
+
+Research working papers from tiers 1–3 count. Working papers from think tanks and NGOs
+never count, which leaves out the academic series Overton files as think tanks (NBER,
+IZA, ifo/CESifo, IFS); nor do scholarly articles. A document listed twice (re-issued, or
+co-published by two institutions) counts once per paper.
 
 | Output | Contents |
 |---|---|
-| `data/release/papers_coded_cited.csv` | `papers_coded.csv` plus `policy_cites`, `policy_cited_any`, counts by organisation type and region, first citation year |
-| `data/release/policy_citation_links.csv` | paper × citing document, with whether it counted and why |
-| `data/release/overton_sources.csv` | each citing organisation: documents, counted, excluded — for reviewing the rule |
+| `data/release/papers_coded_cited.csv` | `papers_coded.csv` plus the tier counts, T4 counts by source tier and region, first citation year |
+| `data/release/policy_citation_links.csv` | paper × citing document, with its tier or why it does not count |
+| `data/release/overton_sources.csv` | each citing organisation: tier, documents, counted, not counted — for reviewing the rule |
+
+The review workbook for the validation sample is built with
+`.venv\Scripts\python scripts\build_sample_data.py <dir>` then
+`python scripts\make_sample_xlsx.py <dir> <out.xlsx>` (the second needs `openpyxl`).
