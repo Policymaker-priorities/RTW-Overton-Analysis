@@ -17,8 +17,8 @@ All outputs are in [`data/release/`](data/release).
 | **`papers_coded_cited.csv`** | 16,147 | **The main table.** One row per research paper: OpenAlex metadata, the LLM-coded characteristics and the policy-citation counts. Coding and citation counts are filled in for the papers done so far (195 coded, 100 matched against Overton) and blank for the rest |
 | **`overton_sample_merged_v0.2.xlsx`** | 100 | **The easiest place to start.** The 100-paper pilot sample in Excel, with a "Read me" sheet: paper metadata, coding and citations, plus sheets for authors, citations by characteristic, every citing document and every citing source |
 | `overton_coded_sample_v0.2.xlsx`, `…_cited.xlsx` | 100 | Earlier cuts of the same pilot workbook: coding only, then coding plus citations |
-| `policy_citation_links.csv` | 1,653 | One row per paper × citing policy document, with whether it counted towards the total and why |
-| `overton_sources.csv` | 234 | Each citing organisation and how many of its documents were counted or excluded, for reviewing the inclusion rule |
+| `policy_citation_links.csv` | 1,653 | One row per paper × citing policy document, with the citation tier it counts at (T1–T4) or why it does not count |
+| `overton_sources.csv` | 234 | Each citing organisation, its tier, and how many of its documents were counted or not, for reviewing the inclusion rule |
 | `papers_stage1.csv` | 16,147 | Research papers before coding (OpenAlex metadata only) |
 | `authorships_stage1.csv` | | Paper × author × institution |
 | `author_disciplines.csv` | 487 | Each author's department discipline, coded from the affiliation text |
