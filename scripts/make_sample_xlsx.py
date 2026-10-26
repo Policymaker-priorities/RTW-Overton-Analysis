@@ -53,17 +53,9 @@ intro = [
      "economics journals, 2016-2025), stratified by journal, all with abstracts. Each was coded by Claude "
      "(Opus 5.5) from its title, abstract and author affiliations alone, following codebook v0.2. "
      "Readability scores are computed directly from the abstract, not by the model."),
-    ("Policy citations", "From Overton (export of 22 October 2026): policy documents citing each paper's "
-     "DOI, counted at four nested tiers, strictest first; each tier includes the ones before it. "
-     "T1: government departments, agencies and legislatures (central banks excepted). "
-     "T2: + central banks (Overton files them as government; identified from their names). "
-     "T3: + intergovernmental organisations (IMF, World Bank, OECD, BIS, regional development banks). "
-     "T4: + think tanks and NGOs, excluding their working papers. Research working papers of "
-     "government, central banks and international organisations count. Never counted: working papers "
-     "from think tanks and NGOs, which include the academic series Overton files as think tanks (NBER, "
-     "IZA, ifo/CESifo, IFS), and scholarly articles. A document listed more than once (re-issued "
-     "versions, co-published by two institutions) counts once. All 100 DOIs were searched, so 0 means "
-     "no citation found."),
+    ("Policy citations", "From Overton (export of 22 October 2026): the policy documents that cite each "
+     "paper's DOI, counted at four levels of strictness (tiers T1 to T4) explained in the table below. "
+     "All 100 DOIs were searched, so 0 means no citation was found."),
     ("Status", "Draft for review. The codebook will be refined after human coders code the same 100 "
      "papers and agreement is checked. The full dataset has not been coded yet."),
     ("Sheets", "'Merged sample': one row per paper: policy citations, then OpenAlex data, then the LLM "
@@ -123,21 +115,81 @@ fields = [
      "one discipline."),
     ("Model notes", "The model's own note on anything uncertain."),
 ]
-rows = ([("Overton analysis: merged sample dataset (OpenAlex + LLM coding + Overton policy citations)", None),
-         ("", None)] + intro + [("", None), ("FIELD", "MEANING")] + fields)
-for r, (a, b) in enumerate(rows, start=1):
+#: What each tier adds. Examples and counts are filled in from the data below.
+TIER_ROWS = [
+    ("T1", "Government and legislature",
+     "Government departments, ministries and agencies (national, state and city), legislatures "
+     "and their research services, the EU institutions. Central banks are NOT in T1."),
+    ("T2", "T1 + central banks",
+     "Adds central banks, including their research working papers. Overton files central banks as "
+     "government; they are separated here because they are half of Overton's 'government' "
+     "citations, mostly research working papers. Identified from the organisation's name."),
+    ("T3", "T2 + international organisations",
+     "Adds intergovernmental organisations, including their research working papers."),
+    ("T4", "T3 + think tanks and NGOs",
+     "Adds reports, briefs and other publications of think tanks and NGOs, but NOT their working "
+     "papers. This is the broadest definition used."),
+]
+NEVER = ("Never counted", "",
+         "Working papers from think tanks and NGOs. These include the academic working-paper series "
+         "that Overton files as think tanks (NBER, IZA, ifo/CESifo, IFS). Also scholarly (journal) "
+         "articles. A document listed more than once (re-issued, or co-published by two "
+         "institutions) counts once.")
+src_tier = sources.assign(t=sources["tier"])
+r = 1
+ws.cell(r, 1, "Overton analysis: merged sample dataset (OpenAlex + LLM coding + Overton policy "
+        "citations)").font = Font(bold=True, size=14)
+r += 2
+for a, b in intro:
+    ws.cell(r, 1, a).font = Font(bold=True)
+    ws.cell(r, 1).alignment = TOP
+    ws.cell(r, 2, b).alignment = WRAP
+    r += 1
+
+# -- citation tiers ----------------------------------------------------------
+r += 1
+ws.cell(r, 1, "POLICY CITATION TIERS").font = Font(bold=True, size=12)
+ws.cell(r, 2, "Each tier includes everything in the tiers above it, so T1 is the strictest view "
+        "of a policy citation and T4 the broadest. Every paper has a citation count and a "
+        "'Cited at' Yes/No for each tier on the 'Merged sample' sheet.").alignment = WRAP
+r += 1
+heads = ["Tier", "What counts", "Example organisations (most documents counted at this tier, or "
+         "most excluded, in the sample)",
+         "Citations in sample", "Papers cited (of 100)"]
+for c, h in enumerate(heads, start=1):
+    cell = ws.cell(r, c, h)
+    cell.font, cell.fill = HEAD, FILL
+    cell.alignment = Alignment(wrap_text=True, vertical="center")
+r += 1
+for i, (tier, name, what) in enumerate(TIER_ROWS, start=1):
+    top = src_tier[src_tier["t"] == i].sort_values("counted", ascending=False)["source_name"].head(4)
+    ws.cell(r, 1, f"{tier}: {name}").font = Font(bold=True)
+    ws.cell(r, 2, what)
+    ws.cell(r, 3, "; ".join(top))
+    count_col = next(c for c in data.columns if c.startswith(f"Policy citations {tier} ("))
+    ws.cell(r, 4, int(data[count_col].sum()))
+    ws.cell(r, 5, int((data[f"Cited at {tier}"] == "Yes").sum()))
+    for c in range(1, 6):
+        ws.cell(r, c).alignment = WRAP
+    r += 1
+ws.cell(r, 1, NEVER[0]).font = Font(bold=True)
+ws.cell(r, 2, NEVER[2])
+excl = src_tier.sort_values("excluded", ascending=False)["source_name"].head(4)
+ws.cell(r, 3, "; ".join(excl))
+for c in range(1, 6):
+    ws.cell(r, c).alignment = WRAP
+r += 2
+
+# -- field definitions -------------------------------------------------------
+for c, h in enumerate(("FIELD", "MEANING"), start=1):
+    ws.cell(r, c, h).font, ws.cell(r, c).fill = HEAD, FILL
+r += 1
+for a, b in fields:
     ws.cell(r, 1, a).alignment = TOP
-    if b is not None:
-        ws.cell(r, 2, b).alignment = WRAP
-ws["A1"].font = Font(bold=True, size=14)
-for r in range(3, 3 + len(intro)):
-    ws.cell(r, 1).font = Font(bold=True)
-hdr = 3 + len(intro) + 1
-for c in (1, 2):
-    ws.cell(hdr, c).font = HEAD
-    ws.cell(hdr, c).fill = FILL
-ws.column_dimensions["A"].width = 40
-ws.column_dimensions["B"].width = 110
+    ws.cell(r, 2, b).alignment = WRAP
+    r += 1
+for col, w in zip("ABCDE", (40, 110, 45, 12, 12)):
+    ws.column_dimensions[col].width = w
 
 
 def table(ws, df, widths, wrap_cols=(), freeze="A2"):
