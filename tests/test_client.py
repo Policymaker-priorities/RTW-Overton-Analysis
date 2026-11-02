@@ -60,11 +60,11 @@ def test_success_returns_redacted_url():
 
 
 def test_retries_then_succeeds_with_backoff():
-    c, sleeps = make([FakeResponse(500), requests.Timeout(), requests.ConnectionError(),
+    c, sleeps = make([FakeResponse(500), requests.Timeout(), requests.ConnectionError(), requests.exceptions.ChunkedEncodingError(),
                       FakeResponse(200, {"ok": 1})])
     data, _, _ = c.get("/works")
     assert data == {"ok": 1}
-    assert [s for s in sleeps if s >= 1] == [1, 2, 4]
+    assert [s for s in sleeps if s >= 1] == [1, 2, 4, 8]
 
 
 def test_other_4xx_not_retried_and_key_scrubbed():

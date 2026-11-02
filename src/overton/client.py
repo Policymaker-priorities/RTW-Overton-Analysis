@@ -89,7 +89,8 @@ class OpenAlexClient:
             self.attempts += 1
             try:
                 r = self._session.get(url, timeout=settings.TIMEOUT)
-            except (requests.Timeout, requests.ConnectionError) as exc:
+            except (requests.Timeout, requests.ConnectionError,
+                    requests.exceptions.ChunkedEncodingError) as exc:
                 throttled = False
                 last_problem = type(exc).__name__
                 continue

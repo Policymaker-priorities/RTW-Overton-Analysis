@@ -18,7 +18,7 @@
 
 ## What to do next
 
-1. **Finish the top-100 harvest.** The first attempt, on 2 November 2026, crashed on a dropped connection before saving any papers, so it needs starting again. The client does not retry that error, so consider adding a retry first. Running it costs only OpenAlex allowance. The commands are in the README under "Top-100 journals, 40 years". It stops when the daily allowance runs out (exit code 3), so run it again the next day and it resumes. Then run `normalise`, `filter` and `report` with the same `--root`, and check the filter still works on older papers.
+1. **Finish the top-100 harvest.** Paused on purpose on 2 November 2026 with a small part done; about 257,000 works are expected, needing roughly 12,600 requests (about 1.5 hours, over two days of allowance). Running it costs only OpenAlex allowance. The commands are in the README under "Top-100 journals, 40 years"; use `--no-estimate` to resume, which skips finished journal-years. It stops when the daily allowance runs out (exit code 3), so run it again the next day. Then run `normalise`, `filter` and `report` with the same `--root`, and check the filter still works on older papers.
 2. **Get the codebook signed off.** Have people hand-code `data/review/llm_validation_sample.csv`, compare with `overton llm-agreement`, and refine. Do this before step 4, because a codebook change means re-coding.
 3. **Decide what to do about missing abstracts** (see below).
 4. **Code everything:** `overton llm-run --all`, then `llm-assemble`.

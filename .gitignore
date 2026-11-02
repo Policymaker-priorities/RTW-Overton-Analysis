@@ -11,3 +11,4 @@ __pycache__/
 # Wider harvests keep their config; their data is rebuilt by `overton --root <run> harvest`.
 runs/*/data/
 runs/*/reports/
+runs/*/harvest*.log
