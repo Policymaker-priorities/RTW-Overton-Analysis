@@ -1,5 +1,7 @@
 # Overton Analysis
 
+> **Taking over this project?** Start with [HANDOVER.md](HANDOVER.md): current state, next steps and what to watch out for.
+
 Which economics research gets cited in policy documents? This repository
 collects every research paper published in 20 economics journals from 2016 to
 2025, codes each one's characteristics (topic, JEL codes, research design,
@@ -68,6 +70,19 @@ $env:OPENALEX_API_KEY = "<your key>"     # never commit or print it
 `normalise`, `filter` and `report` make no network calls. Exit code 2 means a
 gate failed; 3 means the OpenAlex daily budget or rate limit was reached — re-run
 the same command after midnight UTC and the harvest resumes where it stopped.
+
+### Top-100 journals, 40 years
+
+The release data above is the first step in the scoping document: 20 journals,
+2016–2025. The full scope, 101 journals (the top-100 list plus AEA Papers and
+Proceedings) for 1986–2025, runs from its own folder and leaves `data/release/`
+alone. Its raw pages and reports are not committed.
+
+```powershell
+.venv\Scripts\python -m overton --root runs\top100_1986_2025 resolve
+.venv\Scripts\python -m overton --root runs\top100_1986_2025 harvest --years 1986-2025 --request-budget 60000
+.venv\Scripts\python -m overton --root runs\top100_1986_2025 harvest --years 1986-2025 --no-estimate   # resume after exit code 3
+```
 
 ## Outputs
 

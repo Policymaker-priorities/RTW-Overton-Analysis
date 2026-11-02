@@ -97,7 +97,8 @@ def _check_complete(rows: list[dict], stage: str) -> None:
         raise GateFailed(stage, bad)
 
 
-def cmd_harvest(paths: Paths, pilot: bool, journals: list[str] | None, years: str | None) -> None:
+def cmd_harvest(paths: Paths, pilot: bool, journals: list[str] | None, years: str | None,
+                request_budget: int = settings.REQUEST_BUDGET, estimate: bool = True) -> None:
     if pilot:
         targets = _targets(paths, list(settings.PILOT_JOURNALS), list(settings.PILOT_YEARS))
         stage = "Stage 3 pilot harvest"
@@ -106,14 +107,14 @@ def cmd_harvest(paths: Paths, pilot: bool, journals: list[str] | None, years: st
         stage = "Stage 4 harvest"
     print(f"== {stage}: {len(targets)} journal-years")
     with _Usage(paths, "harvest --pilot" if pilot else "harvest") as c:
-        if not pilot:
+        if not pilot and estimate:
             total, est = harvest.estimate(c, targets)
             paths.interim.mkdir(parents=True, exist_ok=True)
             pd.DataFrame(est).to_csv(paths.estimate, index=False, encoding="utf-8")
             print(f"  works counted: {sum(r['count'] for r in est)}; "
-                  f"estimated requests: {total} (limit {settings.REQUEST_BUDGET})")
-            if total > settings.REQUEST_BUDGET:
-                raise GateFailed(stage, [f"estimated {total} requests > {settings.REQUEST_BUDGET}"])
+                  f"estimated requests: {total} (limit {request_budget})")
+            if total > request_budget:
+                raise GateFailed(stage, [f"estimated {total} requests > {request_budget}"])
         rows = harvest.harvest(c, paths, targets)
     _check_complete(rows, stage)
     zero = [f"{r['journal_key']} {r['year']}" for r in rows if int(r["expected_count"]) == 0]
@@ -283,12 +284,18 @@ def _llm_args(p) -> None:
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="overton")
+    p.add_argument("--root", help="run folder holding its own config/, data/ and reports/ "
+                                  "(default: the repository)")
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("resolve")
     h = sub.add_parser("harvest")
     h.add_argument("--pilot", action="store_true")
     h.add_argument("--journals", help="comma-separated journal keys")
     h.add_argument("--years", help="e.g. 2016-2025 or 2020")
+    h.add_argument("--request-budget", type=int, default=settings.REQUEST_BUDGET,
+                   help="stop if the estimated requests exceed this")
+    h.add_argument("--no-estimate", action="store_true",
+                   help="skip the per-journal-year count, e.g. when resuming a large harvest")
     for name in ("normalise", "filter", "report", "all"):
         sub.add_parser(name)
     sub.add_parser("llm-sample")
@@ -315,13 +322,14 @@ def main(argv=None) -> int:
     q = sub.add_parser("llm-agreement")
     q.add_argument("--human", required=True, help="filled-in copy of the validation sample")
     args = p.parse_args(argv)
-    paths = Paths()
+    paths = Paths(args.root) if args.root else Paths()
     try:
         if args.command == "resolve":
             cmd_resolve(paths)
         elif args.command == "harvest":
             js = [j.strip() for j in args.journals.split(",")] if args.journals else None
-            cmd_harvest(paths, args.pilot, js, args.years)
+            cmd_harvest(paths, args.pilot, js, args.years, args.request_budget,
+                        not args.no_estimate)
         elif args.command == "normalise":
             cmd_normalise(paths)
         elif args.command == "filter":

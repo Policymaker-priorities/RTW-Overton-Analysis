@@ -7,3 +7,7 @@ data/interim/*
 __pycache__/
 .pytest_cache/
 *.egg-info/
+
+# Wider harvests keep their config; their data is rebuilt by `overton --root <run> harvest`.
+runs/*/data/
+runs/*/reports/
